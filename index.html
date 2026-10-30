@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>⚽🚁 3D 足球無人機大闖關 - 排行榜版</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js 3D 繪圖引擎 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Noto+Sans+TC:wght@600;800;900&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Fredoka', 'Noto Sans TC', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      overflow: hidden;
+    }
+    
+    /* 觸控方向鍵 3D 立體按鈕質感 */
+    .ctrl-pad-btn {
+      transition: all 0.08s ease;
+      box-shadow: 0 5px 0 #0369a1;
+    }
+    .ctrl-pad-btn:active, .ctrl-pad-btn.active {
+      transform: translateY(3px);
+      box-shadow: 0 2px 0 #0369a1;
+    }
+
+    /* 彈跳視窗動畫 */
+    @keyframes pop-bounce {
+      0% { transform: scale(0.6); opacity: 0; }
+      75% { transform: scale(1.06); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .modal-pop {
+      animation: pop-bounce 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    /* 光暈浮動效果 */
+    @keyframes pulse-ring {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.08); opacity: 1; }
+    }
+    .pulse-effect {
+      animation: pulse-ring 1.8s ease-in-out infinite;
+    }
+
+    /* 卷軸美化 */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #38bdf8;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-between p-2 sm:p-3 overflow-hidden select-none">
+
+  <!-- 頂部資訊列 (HUD 抬頭顯示器) -->
+  <header class="w-full max-w-xl z-20 flex flex-col gap-1.5 pointer-events-auto">
+    <div class="flex items-center justify-between px-1">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl sm:text-3xl animate-bounce">⚽🚀</span>
+        <div class="flex flex-col">
+          <h1 class="text-lg sm:text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] tracking-wide leading-tight">
+            3D 足球無人機
+          </h1>
+          <span class="text-xs text-sky-300 font-bold" id="hudPlayerName">尚未登入</span>
+        </div>
+      </div>
+      
+      <!-- 排行榜與重新開始按鈕 -->
+      <div class="flex gap-2">
+        <button id="showLeaderboardBtnHUD" class="flex items-center gap-1 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white font-black px-3.5 py-1.5 rounded-full shadow-lg border-2 border-sky-200 transition text-xs sm:text-sm cursor-pointer">
+          🏆 排行
+        </button>
+        <button id="restartBtn" class="flex items-center gap-1 bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 font-black px-3.5 py-1.5 rounded-full shadow-lg border-2 border-white transition text-xs sm:text-sm cursor-pointer hidden">
+          🔄 重來
+        </button>
+      </div>
+    </div>
+
+    <!-- 即時儀表板：分數、剩餘時間、穿越圓環 -->
+    <div class="w-full bg-slate-800/90 backdrop-blur-md rounded-2xl p-2 px-3 shadow-2xl border-2 border-sky-400/60 flex justify-between items-center text-center">
+      <!-- 得分 -->
+      <div class="flex-1">
+        <div class="text-[10px] sm:text-xs text-sky-300 font-bold">目前得分</div>
+        <div id="scoreText" class="text-lg sm:text-2xl font-black text-amber-400">0 分</div>
+      </div>
+
+      <div class="h-7 w-0.5 bg-slate-600"></div>
+
+      <!-- 倒數時間 -->
+      <div class="flex-1">
+        <div class="text-[10px] sm:text-xs text-sky-300 font-bold">剩餘時間</div>
+        <div id="timerText" class="text-lg sm:text-2xl font-black text-rose-400">45 秒</div>
+      </div>
+
+      <div class="h-7 w-0.5 bg-slate-600"></div>
+
+      <!-- 圓環完成度 -->
+      <div class="flex-1">
+        <div class="text-[10px] sm:text-xs text-sky-300 font-bold">穿越圓環</div>
+        <div id="ringsText" class="text-lg sm:text-2xl font-black text-emerald-400">0 / 5</div>
+      </div>
+    </div>
+
+    <!-- 終點距離進度條 -->
+    <div class="w-full bg-slate-800/80 rounded-full h-2.5 overflow-hidden border border-slate-600">
+      <div id="progressBar" class="bg-gradient-to-r from-sky-400 via-emerald-400 to-amber-400 h-full w-0 transition-all duration-100"></div>
+    </div>
+  </header>
+
+  <!-- 3D 視角畫布主容器 -->
+  <main class="relative w-full max-w-xl flex-1 flex items-center justify-center my-1 rounded-3xl overflow-hidden shadow-2xl border-2 border-sky-500/40 bg-slate-950">
+    <div id="canvasContainer" class="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing"></div>
+
+    <!-- 視角標籤提示 (第三人稱) -->
+    <div class="absolute top-2 left-3 bg-slate-900/70 border border-sky-400/40 text-sky-300 text-[11px] font-bold px-2.5 py-1 rounded-full backdrop-blur pointer-events-none flex items-center gap-1">
+      <span>🎥 第三人稱跟隨視角</span>
+    </div>
+
+    <!-- 登入與遊戲開始畫面 -->
+    <div id="startScreen" class="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center z-30">
+      <div class="bg-slate-900 rounded-3xl p-6 shadow-2xl max-w-sm w-full border-4 border-amber-400 modal-pop flex flex-col items-center">
+        <div class="text-5xl mb-2 animate-bounce">⚽🛸</div>
+        <h2 class="text-2xl font-black text-white mb-2">飛行員登入</h2>
+        
+        <!-- 登入名稱輸入框 -->
+        <div class="w-full mb-4 mt-2">
+          <label class="block text-sky-300 text-sm font-bold mb-1.5 text-left">請輸入您的名稱：</label>
+          <input type="text" id="playerNameInput" placeholder="例如：王大明、神風特攻隊..." class="w-full bg-slate-800 border-2 border-sky-500 rounded-xl px-4 py-3 text-white font-bold text-center focus:outline-none focus:border-amber-400 transition" maxlength="15">
+          <p id="nameWarning" class="text-rose-400 text-xs font-bold mt-2 hidden transition-all">⚠️ 請輸入名稱才能開始遊戲喔！</p>
+        </div>
+
+        <p class="text-slate-300 text-xs font-bold mb-4 leading-relaxed">
+          按方向鍵調整<span class="text-sky-400 font-black">【上下左右】</span>，<br>
+          穿過 <span class="text-amber-400 font-black">5 個金色旋轉光圈</span>，閃避障礙衝向終點！
+        </p>
+
+        <button id="startBtn" class="w-full py-3 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 active:scale-95 text-slate-950 text-xl font-black rounded-2xl shadow-xl transition flex items-center justify-center gap-2 cursor-pointer mb-3">
+          <span>🚀</span> 開始 3D 闖關
+        </button>
+
+        <button id="showLeaderboardBtnStart" class="w-full py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 text-sm font-black rounded-xl border border-sky-500/50 shadow-lg transition flex items-center justify-center gap-2 cursor-pointer">
+          🏆 查看前 30 名排行榜
+        </button>
+      </div>
+    </div>
+
+    <!-- 排行榜視窗 (獨立覆蓋層) -->
+    <div id="leaderboardScreen" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md hidden flex-col items-center justify-center p-5 z-40">
+      <div class="bg-slate-900 rounded-3xl p-5 shadow-2xl max-w-sm w-full border-4 border-sky-400 modal-pop flex flex-col items-center">
+        <h2 class="text-2xl font-black text-sky-400 mb-3 flex items-center gap-2"><span>🏆</span> 頂尖排行榜 <span>🏆</span></h2>
+        <p class="text-xs text-slate-400 mb-3">伺服器保留最高分的前 30 名紀錄</p>
+        
+        <div class="w-full bg-slate-800 rounded-xl overflow-hidden mb-4 border border-slate-700">
+          <!-- 排行榜列表容器 -->
+          <div class="max-h-60 overflow-y-auto w-full p-2" id="leaderboardList">
+            <!-- JavaScript 將在此動態生成列表 -->
+          </div>
+        </div>
+
+        <button id="closeLeaderboardBtn" class="w-full py-3 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-lg font-black rounded-xl shadow-lg transition cursor-pointer">
+          關閉
+        </button>
+      </div>
+    </div>
+
+    <!-- 闖關成功恭喜視窗 -->
+    <div id="successScreen" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md hidden flex-col items-center justify-center p-5 z-30">
+      <div class="bg-slate-900 rounded-3xl p-6 shadow-2xl max-w-sm w-full text-center border-4 border-amber-400 modal-pop flex flex-col items-center">
+        <div class="text-6xl mb-2 animate-bounce">🏆🎉</div>
+        <h2 class="text-2xl font-black text-emerald-400 mb-1">闖關成功！</h2>
+        <p class="text-slate-300 text-sm font-bold mb-3">成績已自動記錄至排行榜！</p>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3 w-full mb-4">
+          <p class="text-slate-300 text-sm font-bold">總結得分：<span id="finalScore" class="text-3xl font-black text-amber-400">0</span> 分</p>
+          <p class="text-emerald-400 text-xs font-bold mt-1">時間獎勵：<span id="finalBonus" class="font-black">+0</span> 分</p>
+        </div>
+        <div class="flex w-full gap-2">
+          <button id="nextLevelBtn" class="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white text-base font-black rounded-2xl shadow-lg transition cursor-pointer">
+            🎮 再玩一次
+          </button>
+          <button id="showLeaderboardBtnSuccess" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 text-base font-black rounded-2xl border border-sky-500/50 shadow-lg transition cursor-pointer">
+            🏆 排行榜
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 時間用盡 / 失敗視窗 -->
+    <div id="timeoutScreen" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md hidden flex-col items-center justify-center p-5 z-30">
+      <div class="bg-slate-900 rounded-3xl p-6 shadow-2xl max-w-sm w-full text-center border-4 border-rose-500 modal-pop flex flex-col items-center">
+        <div class="text-6xl mb-2">⏰💥</div>
+        <h2 class="text-2xl font-black text-rose-500 mb-1">時間到囉！差一點！</h2>
+        <p class="text-slate-300 text-sm font-bold mb-4">已將您目前的分數記錄下來。再來挑戰一次吧！</p>
+        
+        <div class="flex w-full gap-2">
+          <button id="retryBtn" class="flex-1 py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 active:scale-95 text-white text-base font-black rounded-2xl shadow-lg transition cursor-pointer">
+            🔄 重新挑戰
+          </button>
+          <button id="showLeaderboardBtnTimeout" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 text-base font-black rounded-2xl border border-sky-500/50 shadow-lg transition cursor-pointer">
+            🏆 排行榜
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 底部加大觸控按鈕操作區 (支援手機與平板) -->
+  <footer class="w-full max-w-xl z-20 flex flex-col items-center mt-1 pointer-events-auto">
+    <div class="grid grid-cols-3 gap-2 w-56 sm:w-64">
+      <div></div>
+      <!-- 上升 -->
+      <button id="btnUp" class="ctrl-pad-btn bg-gradient-to-b from-sky-400 to-sky-600 text-white rounded-2xl h-12 flex items-center justify-center text-2xl font-black border-2 border-sky-300">
+        ⬆️
+      </button>
+      <div></div>
+
+      <!-- 往左 -->
+      <button id="btnLeft" class="ctrl-pad-btn bg-gradient-to-b from-sky-400 to-sky-600 text-white rounded-2xl h-12 flex items-center justify-center text-2xl font-black border-2 border-sky-300">
+        ⬅️
+      </button>
+      <!-- 下降 -->
+      <button id="btnDown" class="ctrl-pad-btn bg-gradient-to-b from-sky-400 to-sky-600 text-white rounded-2xl h-12 flex items-center justify-center text-2xl font-black border-2 border-sky-300">
+        ⬇️
+      </button>
+      <!-- 往右 -->
+      <button id="btnRight" class="ctrl-pad-btn bg-gradient-to-b from-sky-400 to-sky-600 text-white rounded-2xl h-12 flex items-center justify-center text-2xl font-black border-2 border-sky-300">
+        ➡️
+      </button>
+    </div>
+
+    <!-- 鍵盤輔助提示 -->
+    <p class="text-[11px] sm:text-xs text-slate-300 font-bold mt-1 text-center">
+      鍵盤操作：<span class="bg-slate-800 px-1.5 py-0.5 rounded text-sky-400 border border-slate-700">⬆️ ⬇️ ⬅️ ➡️</span> 或 <span class="bg-slate-800 px-1.5 py-0.5 rounded text-sky-400 border border-slate-700">W A S D</span>
+    </p>
+  </footer>
+
+  <script>
+    // --- 音效系統 ---
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new AudioContextClass();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playBeepSound() {
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(420, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(580, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.06);
+      } catch (e) {}
+    }
+
+    function playRingSound() {
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime); // E5
+        osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime + 0.08); // C6
+        gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.36);
+      } catch (e) {}
+    }
+
+    function playBumpSound() {
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(70, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.16);
+      } catch (e) {}
+    }
+
+    function playVictoryFanfare() {
+      try {
+        initAudio();
+        const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+        notes.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.1);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime + idx * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.1 + 0.45);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + idx * 0.1);
+          osc.stop(audioCtx.currentTime + idx * 0.1 + 0.46);
+        });
+      } catch (e) {}
+    }
+
+    // --- 遊戲邏輯與排行榜狀態 ---
+    let gameState = 'LOGIN'; // 'LOGIN', 'PLAYING', 'SUCCESS', 'TIMEOUT'
+    let currentPlayer = '';
+    let score = 0;
+    let timeLeft = 45;
+    let timerInterval = null;
+    let ringsClearedCount = 0;
+
+    const LEADERBOARD_KEY = 'droneSoccerTop30';
+
+    // 賽道長度設定
+    const COURSE_START_Z = 15;
+    const COURSE_FINISH_Z = -460;
+    const TOTAL_DISTANCE = Math.abs(COURSE_FINISH_Z - COURSE_START_Z);
+
+    // Three.js 核心物件
+    let scene, camera, renderer, container;
+    let droneGroup;
+    let propellers = [];
+    let protectiveCage;
+    let rings = [];
+    let obstacles = [];
+    let trophyMesh;
+    let sparkleParticles = [];
+
+    // 鍵盤輸入狀態
+    const keys = {
+      ArrowUp: false,
+      ArrowDown: false,
+      ArrowLeft: false,
+      ArrowRight: false,
+      w: false,
+      s: false,
+      a: false,
+      d: false
+    };
+
+    // 無人機即時運動參數
+    const droneState = {
+      x: 0,
+      y: 4.5,
+      z: COURSE_START_Z,
+      vx: 0,
+      vy: 0,
+      forwardSpeed: 0.95,
+      tiltX: 0,
+      tiltZ: 0,
+      minX: -9.5,
+      maxX: 9.5,
+      minY: 1.5,
+      maxY: 8.5
+    };
+
+    // --- 排行榜系統 ---
+    function saveToLeaderboard(finalScore) {
+      if (!currentPlayer || finalScore <= 0) return; // 0分不列入
+      
+      let leaderboard = [];
+      try {
+        const saved = localStorage.getItem(LEADERBOARD_KEY);
+        if (saved) leaderboard = JSON.parse(saved);
+      } catch (e) {
+        console.error("讀取排行榜失敗", e);
+      }
+
+      // 新增成績
+      leaderboard.push({
+        name: currentPlayer,
+        score: finalScore,
+        date: new Date().toLocaleDateString()
+      });
+
+      // 依分數大到小排序
+      leaderboard.sort((a, b) => b.score - a.score);
+
+      // 僅保留前 30 名
+      leaderboard = leaderboard.slice(0, 30);
+
+      try {
+        localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboard));
+      } catch (e) {
+        console.error("儲存排行榜失敗", e);
+      }
+    }
+
+    function renderLeaderboard() {
+      const listContainer = document.getElementById('leaderboardList');
+      listContainer.innerHTML = ''; // 清空
+
+      let leaderboard = [];
+      try {
+        const saved = localStorage.getItem(LEADERBOARD_KEY);
+        if (saved) leaderboard = JSON.parse(saved);
+      } catch (e) {}
+
+      if (leaderboard.length === 0) {
+        listContainer.innerHTML = '<div class="text-center text-slate-400 py-6 text-sm font-bold">目前還沒有成績，趕快來成為第一名吧！</div>';
+        return;
+      }
+
+      leaderboard.forEach((entry, idx) => {
+        const item = document.createElement('div');
+        item.className = 'flex justify-between items-center py-2.5 border-b border-slate-700/50 last:border-0 px-3 hover:bg-slate-700/30 transition rounded-lg';
+        
+        let rankIcon = `<span class="font-black w-6 text-center text-sky-400">${idx + 1}</span>`;
+        if (idx === 0) rankIcon = `<span class="font-black w-6 text-center text-amber-400 text-lg drop-shadow-[0_0_5px_rgba(251,191,36,0.8)]">🥇</span>`;
+        if (idx === 1) rankIcon = `<span class="font-black w-6 text-center text-slate-300 text-lg">🥈</span>`;
+        if (idx === 2) rankIcon = `<span class="font-black w-6 text-center text-amber-600 text-lg">🥉</span>`;
+
+        item.innerHTML = `
+          <div class="flex items-center gap-3">
+            ${rankIcon}
+            <div class="flex flex-col">
+              <span class="text-white font-bold text-sm truncate max-w-[140px]">${entry.name}</span>
+              <span class="text-[10px] text-slate-500">${entry.date}</span>
+            </div>
+          </div>
+          <div class="text-emerald-400 font-black tracking-wide">${entry.score} <span class="text-xs text-emerald-600">分</span></div>
+        `;
+        listContainer.appendChild(item);
+      });
+    }
+
+    function showLeaderboard() {
+      initAudio();
+      renderLeaderboard();
+      document.getElementById('leaderboardScreen').classList.remove('hidden');
+      document.getElementById('leaderboardScreen').classList.add('flex');
+    }
+
+    function closeLeaderboard() {
+      initAudio();
+      document.getElementById('leaderboardScreen').classList.add('hidden');
+      document.getElementById('leaderboardScreen').classList.remove('flex');
+    }
+
+    // 綁定排行榜按鈕
+    document.getElementById('showLeaderboardBtnStart').addEventListener('click', showLeaderboard);
+    document.getElementById('showLeaderboardBtnHUD').addEventListener('click', showLeaderboard);
+    document.getElementById('showLeaderboardBtnSuccess').addEventListener('click', showLeaderboard);
+    document.getElementById('showLeaderboardBtnTimeout').addEventListener('click', showLeaderboard);
+    document.getElementById('closeLeaderboardBtn').addEventListener('click', closeLeaderboard);
+
+    // --- 3D 遊戲環境初始化 ---
+    function initThreeScene() {
+      container = document.getElementById('canvasContainer');
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+      scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
+
+      camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 800);
+      camera.position.set(0, 7.5, 23);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      container.appendChild(renderer.domElement);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+      dirLight.position.set(20, 40, 20);
+      dirLight.castShadow = true;
+      scene.add(dirLight);
+
+      const droneHeadlight = new THREE.PointLight(0x38bdf8, 1.8, 40);
+      droneHeadlight.position.set(0, 4, 10);
+      scene.add(droneHeadlight);
+
+      buildStadiumEnvironment();
+      buildSoccerDrone();
+      generateCourseObjects();
+      buildFinishGate();
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    function buildStadiumEnvironment() {
+      const trackWidth = 26;
+      const trackLength = Math.abs(COURSE_FINISH_Z) + 120;
+      
+      const groundGeo = new THREE.PlaneGeometry(trackWidth, trackLength, 1, 60);
+      const groundMat = new THREE.MeshLambertMaterial({ color: 0x15803d, wireframe: false });
+      const ground = new THREE.Mesh(groundGeo, groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(0, 0, -trackLength / 2 + 30);
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.7, transparent: true });
+      for (let z = 10; z >= COURSE_FINISH_Z - 20; z -= 30) {
+        const lineMesh = new THREE.Mesh(new THREE.PlaneGeometry(trackWidth - 2, 0.5), lineMat);
+        lineMesh.rotation.x = -Math.PI / 2;
+        lineMesh.position.set(0, 0.05, z);
+        scene.add(lineMesh);
+      }
+
+      const fenceMat = new THREE.MeshBasicMaterial({ color: 0x0284c7, wireframe: true });
+      const fenceGeo = new THREE.BoxGeometry(0.4, 6, trackLength);
+      
+      const leftFence = new THREE.Mesh(fenceGeo, fenceMat);
+      leftFence.position.set(-trackWidth / 2, 3, -trackLength / 2 + 30);
+      scene.add(leftFence);
+
+      const rightFence = new THREE.Mesh(fenceGeo, fenceMat);
+      rightFence.position.set(trackWidth / 2, 3, -trackLength / 2 + 30);
+      scene.add(rightFence);
+
+      const pad = new THREE.Mesh(new THREE.RingGeometry(0.1, 4, 32), new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide }));
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set(0, 0.08, COURSE_START_Z);
+      scene.add(pad);
+    }
+
+    function buildSoccerDrone() {
+      droneGroup = new THREE.Group();
+
+      const ballGeo = new THREE.SphereGeometry(0.9, 20, 20);
+      const ballMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3, metalness: 0.1 });
+      const soccerBall = new THREE.Mesh(ballGeo, ballMat);
+      soccerBall.castShadow = true;
+      droneGroup.add(soccerBall);
+
+      const patchMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
+      const patchPositions = [
+        [0, 0.9, 0], [0, -0.9, 0], [0.85, 0.3, 0], [-0.85, 0.3, 0],
+        [0, 0.3, 0.85], [0, 0.3, -0.85], [0.55, -0.4, 0.55], [-0.55, -0.4, -0.55]
+      ];
+      patchPositions.forEach(pos => {
+        const patch = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), patchMat);
+        patch.position.set(pos[0], pos[1], pos[2]);
+        droneGroup.add(patch);
+      });
+
+      const cageGeo = new THREE.IcosahedronGeometry(1.65, 1);
+      const cageMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.85 });
+      protectiveCage = new THREE.Mesh(cageGeo, cageMat);
+      droneGroup.add(protectiveCage);
+
+      const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.4);
+      const armMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+
+      const arm1 = new THREE.Mesh(armGeo, armMat);
+      arm1.rotation.z = Math.PI / 4;
+      arm1.rotation.x = Math.PI / 2;
+      droneGroup.add(arm1);
+
+      const arm2 = new THREE.Mesh(armGeo, armMat);
+      arm2.rotation.z = -Math.PI / 4;
+      arm2.rotation.x = Math.PI / 2;
+      droneGroup.add(arm2);
+
+      const propPositions = [
+        [-0.85, 0.4, -0.85], [0.85, 0.4, -0.85],
+        [-0.85, 0.4, 0.85], [0.85, 0.4, 0.85]
+      ];
+
+      propellers = [];
+      const propGeo = new THREE.BoxGeometry(0.9, 0.02, 0.12);
+      const propMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.8 });
+
+      propPositions.forEach(p => {
+        const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.2), armMat);
+        motor.position.set(p[0], p[1], p[2]);
+        droneGroup.add(motor);
+
+        const prop = new THREE.Mesh(propGeo, propMat);
+        prop.position.set(p[0], p[1] + 0.12, p[2]);
+        droneGroup.add(prop);
+        propellers.push(prop);
+      });
+
+      const tailLight = new THREE.PointLight(0x22c55e, 1.2, 5);
+      tailLight.position.set(0, 0, 1.4);
+      droneGroup.add(tailLight);
+
+      droneGroup.position.set(droneState.x, droneState.y, droneState.z);
+      scene.add(droneGroup);
+    }
+
+    function generateCourseObjects() {
+      const ringConfigs = [
+        { z: -60, x: -2.5, y: 4.8 },
+        { z: -140, x: 3.5, y: 5.5 },
+        { z: -220, x: -4.0, y: 3.8 },
+        { z: -300, x: 2.0, y: 6.2 },
+        { z: -380, x: 0.0, y: 4.5 }
+      ];
+
+      rings = [];
+      const torusGeo = new THREE.TorusGeometry(2.4, 0.28, 16, 40);
+
+      ringConfigs.forEach((cfg, idx) => {
+        const ringGroup = new THREE.Group();
+        const torusMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xca8a04, roughness: 0.2, metalness: 0.8 });
+        const torusMesh = new THREE.Mesh(torusGeo, torusMat);
+        ringGroup.add(torusMesh);
+        const light = new THREE.PointLight(0xfde047, 1.5, 12);
+        ringGroup.add(light);
+        ringGroup.position.set(cfg.x, cfg.y, cfg.z);
+        scene.add(ringGroup);
+
+        rings.push({ group: ringGroup, mesh: torusMesh, x: cfg.x, y: cfg.y, z: cfg.z, radius: 2.3, cleared: false, id: idx + 1 });
+      });
+
+      const obsConfigs = [
+        { z: -100, x: 0, y: 4.5, speedY: 0.04, minY: 2.5, maxY: 6.5 },
+        { z: -180, x: -2.0, y: 3.0, speedX: 0.05, minX: -6, maxX: 4 },
+        { z: -260, x: 3.0, y: 5.0, speedY: -0.045, minY: 2.0, maxY: 7.0 },
+        { z: -340, x: -1.0, y: 4.0, speedX: -0.055, minX: -5, maxX: 5 }
+      ];
+
+      obstacles = [];
+      const obsGeo = new THREE.DodecahedronGeometry(1.2, 0);
+
+      obsConfigs.forEach(cfg => {
+        const obsMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x7f1d1d, roughness: 0.3 });
+        const mesh = new THREE.Mesh(obsGeo, obsMat);
+        mesh.position.set(cfg.x, cfg.y, cfg.z);
+        scene.add(mesh);
+
+        const alertRing = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.08, 8, 24), new THREE.MeshBasicMaterial({ color: 0xf97316 }));
+        mesh.add(alertRing);
+        obstacles.push({ mesh: mesh, alertRing: alertRing, ...cfg, radius: 1.5 });
+      });
+    }
+
+    function buildFinishGate() {
+      const gateGroup = new THREE.Group();
+      const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.5 });
+      
+      const leftPillar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 10, 1.2), pillarMat);
+      leftPillar.position.set(-10, 5, 0);
+      gateGroup.add(leftPillar);
+
+      const rightPillar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 10, 1.2), pillarMat);
+      rightPillar.position.set(10, 5, 0);
+      gateGroup.add(rightPillar);
+
+      const topBar = new THREE.Mesh(new THREE.BoxGeometry(21.2, 1.2, 1.2), pillarMat);
+      topBar.position.set(0, 10, 0);
+      gateGroup.add(topBar);
+
+      const trophyGroup = new THREE.Group();
+      const trophyMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xd97706, metalness: 0.85, roughness: 0.2 });
+
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.8, 1, 16), trophyMat);
+      trophyGroup.add(base);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.8, 16), trophyMat);
+      stem.position.y = 1.2;
+      trophyGroup.add(stem);
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 0.7, 2.5, 16), trophyMat);
+      cup.position.y = 3.0;
+      trophyGroup.add(cup);
+
+      trophyGroup.position.set(0, 4.5, 0);
+      gateGroup.add(trophyGroup);
+      trophyMesh = trophyGroup;
+
+      gateGroup.position.set(0, 0, COURSE_FINISH_Z);
+      scene.add(gateGroup);
+    }
+
+    function create3DSparkles(x, y, z, colorHex = 0xfacc15, count = 25) {
+      for (let i = 0; i < count; i++) {
+        const pMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12 + Math.random() * 0.12, 6, 6), new THREE.MeshBasicMaterial({ color: colorHex }));
+        pMesh.position.set(x, y, z);
+
+        const angle = Math.random() * Math.PI * 2;
+        const elevation = (Math.random() - 0.5) * Math.PI;
+        const spd = 0.15 + Math.random() * 0.25;
+
+        sparkleParticles.push({
+          mesh: pMesh,
+          vx: Math.cos(angle) * Math.cos(elevation) * spd,
+          vy: Math.sin(elevation) * spd,
+          vz: Math.sin(angle) * Math.cos(elevation) * spd,
+          life: 40
+        });
+
+        scene.add(pMesh);
+      }
+    }
+
+    function updateSparkles() {
+      for (let i = sparkleParticles.length - 1; i >= 0; i--) {
+        const p = sparkleParticles[i];
+        p.mesh.position.x += p.vx;
+        p.mesh.position.y += p.vy;
+        p.mesh.position.z += p.vz;
+        p.life--;
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          sparkleParticles.splice(i, 1);
+        }
+      }
+    }
+
+    // --- 控制輸入 ---
+    window.addEventListener('keydown', (e) => {
+      const key = e.key;
+      if (keys.hasOwnProperty(key)) {
+        keys[key] = true;
+        initAudio();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const key = e.key;
+      if (keys.hasOwnProperty(key)) {
+        keys[key] = false;
+      }
+    });
+
+    function setupTouchButton(elemId, keyName) {
+      const btn = document.getElementById(elemId);
+      const press = (e) => {
+        e.preventDefault();
+        initAudio();
+        keys[keyName] = true;
+        btn.classList.add('active');
+        playBeepSound();
+      };
+      const release = (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+        btn.classList.remove('active');
+      };
+
+      btn.addEventListener('mousedown', press);
+      btn.addEventListener('mouseup', release);
+      btn.addEventListener('mouseleave', release);
+      btn.addEventListener('touchstart', press, { passive: false });
+      btn.addEventListener('touchend', release, { passive: false });
+      btn.addEventListener('touchcancel', release, { passive: false });
+    }
+
+    setupTouchButton('btnUp', 'ArrowUp');
+    setupTouchButton('btnDown', 'ArrowDown');
+    setupTouchButton('btnLeft', 'ArrowLeft');
+    setupTouchButton('btnRight', 'ArrowRight');
+
+    // --- 遊戲狀態管理 ---
+    function updateDashboard() {
+      document.getElementById('scoreText').innerText = `${score} 分`;
+      document.getElementById('timerText').innerText = `${timeLeft} 秒`;
+      document.getElementById('ringsText').innerText = `${ringsClearedCount} / ${rings.length}`;
+      const progress = Math.min(100, Math.max(0, ((COURSE_START_Z - droneState.z) / TOTAL_DISTANCE) * 100));
+      document.getElementById('progressBar').style.width = `${progress}%`;
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (gameState === 'PLAYING') {
+          timeLeft--;
+          updateDashboard();
+          if (timeLeft <= 0) {
+            handleTimeout();
+          }
+        }
+      }, 1000);
+    }
+
+    function handleTimeout() {
+      gameState = 'TIMEOUT';
+      clearInterval(timerInterval);
+      
+      // 儲存排行榜分數
+      saveToLeaderboard(score);
+
+      document.getElementById('timeoutScreen').classList.remove('hidden');
+      document.getElementById('timeoutScreen').classList.add('flex');
+      document.getElementById('restartBtn').classList.remove('hidden');
+    }
+
+    function triggerSuccess() {
+      gameState = 'SUCCESS';
+      clearInterval(timerInterval);
+
+      // 剩餘時間換算為加分獎勵
+      const bonus = timeLeft * 15;
+      const totalScore = score + bonus;
+
+      document.getElementById('finalScore').innerText = totalScore;
+      document.getElementById('finalBonus').innerText = `+${bonus}`;
+
+      // 儲存成績至排行榜
+      saveToLeaderboard(totalScore);
+
+      create3DSparkles(droneState.x, droneState.y, droneState.z, 0xfacc15, 60);
+      playVictoryFanfare();
+
+      document.getElementById('successScreen').classList.remove('hidden');
+      document.getElementById('successScreen').classList.add('flex');
+      document.getElementById('restartBtn').classList.remove('hidden');
+    }
+
+    function resetGame() {
+      score = 0;
+      timeLeft = 45;
+      ringsClearedCount = 0;
+
+      droneState.x = 0;
+      droneState.y = 4.5;
+      droneState.z = COURSE_START_Z;
+      droneState.vx = 0;
+      droneState.vy = 0;
+      droneState.tiltX = 0;
+      droneState.tiltZ = 0;
+
+      rings.forEach(r => {
+        r.cleared = false;
+        r.mesh.material.color.setHex(0xfacc15);
+        r.mesh.material.emissive.setHex(0xca8a04);
+      });
+
+      updateDashboard();
+    }
+
+    function startGame() {
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('successScreen').classList.add('hidden');
+      document.getElementById('successScreen').classList.remove('flex');
+      document.getElementById('timeoutScreen').classList.add('hidden');
+      document.getElementById('timeoutScreen').classList.remove('flex');
+      document.getElementById('restartBtn').classList.remove('hidden');
+
+      resetGame();
+      gameState = 'PLAYING';
+      startTimer();
+    }
+
+    // 開始按鈕綁定 (附帶名稱驗證)
+    document.getElementById('startBtn').addEventListener('click', () => {
+      initAudio();
+      const inputVal = document.getElementById('playerNameInput').value.trim();
+      const warningEl = document.getElementById('nameWarning');
+      
+      if (!inputVal) {
+        // 未輸入時顯示警告，而不使用 alert()
+        warningEl.classList.remove('hidden');
+        document.getElementById('playerNameInput').classList.add('border-rose-500');
+        setTimeout(() => {
+          document.getElementById('playerNameInput').classList.remove('border-rose-500');
+        }, 1500);
+        return;
+      }
+
+      warningEl.classList.add('hidden');
+      currentPlayer = inputVal;
+      document.getElementById('hudPlayerName').innerText = currentPlayer;
+      
+      startGame();
+    });
+
+    document.getElementById('restartBtn').addEventListener('click', () => {
+      initAudio();
+      startGame();
+    });
+
+    document.getElementById('nextLevelBtn').addEventListener('click', () => {
+      initAudio();
+      startGame();
+    });
+
+    document.getElementById('retryBtn').addEventListener('click', () => {
+      initAudio();
+      startGame();
+    });
+
+    function check3DCollisions() {
+      rings.forEach(r => {
+        if (!r.cleared) {
+          const dz = Math.abs(droneState.z - r.z);
+          if (dz < 1.8) {
+            const dxy = Math.hypot(droneState.x - r.x, droneState.y - r.y);
+            if (dxy <= r.radius) {
+              r.cleared = true;
+              ringsClearedCount++;
+              score += 100;
+              r.mesh.material.color.setHex(0x4ade80);
+              r.mesh.material.emissive.setHex(0x16a34a);
+              playRingSound();
+              create3DSparkles(r.x, r.y, r.z, 0xfde047, 30);
+              updateDashboard();
+            }
+          }
+        }
+      });
+
+      obstacles.forEach(obs => {
+        const dist = Math.hypot(droneState.x - obs.mesh.position.x, droneState.y - obs.mesh.position.y, droneState.z - obs.mesh.position.z);
+        if (dist < obs.radius + 1.2) {
+          playBumpSound();
+          create3DSparkles(droneState.x, droneState.y, droneState.z, 0xef4444, 15);
+          droneState.z += 3.5;
+          if (score >= 10) score -= 10;
+          updateDashboard();
+        }
+      });
+
+      if (droneState.z <= COURSE_FINISH_Z) {
+        triggerSuccess();
+      }
+    }
+
+    function onWindowResize() {
+      if (!container || !camera || !renderer) return;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      propellers.forEach(p => p.rotation.y += 0.6);
+      if (protectiveCage) protectiveCage.rotation.y += 0.015;
+      if (trophyMesh) trophyMesh.rotation.y += 0.025;
+
+      rings.forEach(r => r.group.rotation.z += 0.01);
+
+      obstacles.forEach(obs => {
+        obs.alertRing.rotation.x += 0.03;
+        obs.alertRing.rotation.y += 0.04;
+        
+        if (obs.speedY) {
+          obs.mesh.position.y += obs.speedY;
+          if (obs.mesh.position.y <= obs.minY || obs.mesh.position.y >= obs.maxY) obs.speedY = -obs.speedY;
+        }
+        if (obs.speedX) {
+          obs.mesh.position.x += obs.speedX;
+          if (obs.mesh.position.x <= obs.minX || obs.mesh.position.x >= obs.maxX) obs.speedX = -obs.speedX;
+        }
+      });
+
+      if (gameState === 'PLAYING') {
+        droneState.z -= droneState.forwardSpeed;
+
+        let targetVx = 0;
+        let targetVy = 0;
+
+        if (keys.ArrowLeft || keys.a) targetVx -= 0.18;
+        if (keys.ArrowRight || keys.d) targetVx += 0.18;
+        if (keys.ArrowUp || keys.w) targetVy += 0.16;
+        if (keys.ArrowDown || keys.s) targetVy -= 0.16;
+
+        droneState.vx += (targetVx - droneState.vx) * 0.25;
+        droneState.vy += (targetVy - droneState.vy) * 0.25;
+        droneState.x += droneState.vx;
+        droneState.y += droneState.vy;
+
+        droneState.x = Math.max(droneState.minX, Math.min(droneState.maxX, droneState.x));
+        droneState.y = Math.max(droneState.minY, Math.min(droneState.maxY, droneState.y));
+
+        droneState.tiltZ = -droneState.vx * 2.2;
+        droneState.tiltX = droneState.vy * 1.5;
+
+        check3DCollisions();
+        updateDashboard();
+      }
+
+      if (droneGroup) {
+        droneGroup.position.set(droneState.x, droneState.y, droneState.z);
+        droneGroup.rotation.z = droneState.tiltZ;
+        droneGroup.rotation.x = droneState.tiltX;
+      }
+
+      const cameraTargetZ = droneState.z + 8.2;
+      const cameraTargetY = droneState.y + 2.8;
+      const cameraTargetX = droneState.x * 0.7;
+
+      camera.position.x += (cameraTargetX - camera.position.x) * 0.12;
+      camera.position.y += (cameraTargetY - camera.position.y) * 0.12;
+      camera.position.z += (cameraTargetZ - camera.position.z) * 0.15;
+
+      camera.lookAt(droneState.x, droneState.y + 0.5, droneState.z - 12);
+
+      updateSparkles();
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function() {
+      initThreeScene();
+      animate();
+    };
+  </script>
+</body>
+</html>
